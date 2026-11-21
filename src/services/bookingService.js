@@ -44,7 +44,7 @@ async function bookAppointment({ patientId, doctorId, apptDatetime }) {
   return appointment;
 }
 
-module.exports = { bookAppointment };
+module.exports = { bookAppointment, joinWaitlist };
 const { redis } = require('../config/redis');
 const { waitlistKey } = require('../utils/queue');
 

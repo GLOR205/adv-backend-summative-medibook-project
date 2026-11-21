@@ -4,7 +4,7 @@ const patientModel = require('../models/patientModel');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validatePatient(body) {
-  const { full_name, email, phone } = body;
+  const { full_name, email, phone } = body || {};
   if (!full_name || !email || !phone) throw new AppError(400, 'full_name, email and phone are required');
   if (!EMAIL_RE.test(email)) throw new AppError(400, 'Invalid email format');
 }
