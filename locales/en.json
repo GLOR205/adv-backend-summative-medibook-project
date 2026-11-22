@@ -8,5 +8,12 @@
     "How has your approach to designing databases or APIs changed since the start of the trimester?",
     "What would you improve about how this course was taught or assessed?",
     "How do you plan to apply what you learned in this course going forward?"
+  ],
+  "answers": [
+    "The most challenging topic was concurrency. Making sure two patients can never book the same doctor slot, and that a doctor never goes over 12 appointments a day, was hard because code that works for one request can break when two arrive at the same instant. I had to learn transactions, row locks and how the database can enforce rules by itself.",
+    "I only understood unique constraints on cancelled records after building the MediBook project. A plain UNIQUE on doctor and time would block a cancelled slot forever. It clicked when I used a generated active_slot column that is NULL for cancelled appointments, and saw that MySQL lets a cancelled row and a new booking share the same time. Sending five requests at once and seeing exactly one succeed made it real.",
+    "At the start I thought of a backend as tables with CRUD endpoints. Now I design the constraints in the database first, as the last line of defence, then put the business rules in services, keep all SQL in the models, and extract pure functions like the refund calculator so they can be unit tested without a database.",
+    "I would add more hands-on practice with transactions and concurrency earlier in the trimester, with small exercises before the final assessment. I would also share a worked example of the grading criteria earlier, so students know what a strong answer looks like while they are building.",
+    "I plan to use these ideas in real projects: validating input at the API boundary, using transactions when several changes must succeed or fail together, and using queues for background work. As I move towards product management, understanding these technical constraints will also help me talk with engineers and plan realistic features."
   ]
 }

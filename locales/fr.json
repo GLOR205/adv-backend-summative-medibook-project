@@ -8,5 +8,12 @@
     "Comment votre approche de la conception de bases de données ou d'API a-t-elle changé depuis le début du trimestre ?",
     "Qu'amélioreriez-vous dans la façon dont ce cours a été enseigné ou évalué ?",
     "Comment comptez-vous appliquer ce que vous avez appris dans ce cours à l'avenir ?"
+  ],
+  "answers": [
+    "Le sujet le plus difficile a été la concurrence. Garantir que deux patients ne peuvent jamais réserver le même créneau avec un médecin, et qu'un médecin ne dépasse jamais 12 rendez-vous par jour, était compliqué, car un code qui fonctionne pour une requête peut échouer lorsque deux requêtes arrivent au même instant. J'ai dû comprendre les transactions, les verrous de ligne et la façon dont la base de données peut appliquer des règles elle-même.",
+    "Je n'ai compris les contraintes d'unicité sur les enregistrements annulés qu'après avoir construit le projet MediBook. Un simple UNIQUE sur le médecin et l'heure bloquerait un créneau annulé pour toujours. Le déclic est venu avec une colonne générée active_slot, qui vaut NULL pour les rendez-vous annulés : MySQL accepte alors qu'une ligne annulée et une nouvelle réservation partagent la même heure. Envoyer cinq requêtes en même temps et voir une seule réussir a rendu le concept concret.",
+    "Au début, je voyais un backend comme des tables avec des points de terminaison CRUD. Aujourd'hui, je conçois d'abord les contraintes dans la base de données, comme dernière ligne de défense, puis je place les règles métier dans des services, je garde tout le SQL dans les modèles, et j'extrais des fonctions pures, comme le calcul du remboursement, pour pouvoir les tester sans base de données.",
+    "J'ajouterais plus de pratique concrète sur les transactions et la concurrence plus tôt dans le trimestre, avec de petits exercices avant l'évaluation finale. Je partagerais aussi plus tôt un exemple corrigé des critères de notation, afin que les étudiants sachent à quoi ressemble une bonne réponse pendant qu'ils développent.",
+    "Je compte utiliser ces idées dans des projets réels : valider les entrées à la frontière de l'API, utiliser des transactions lorsque plusieurs changements doivent réussir ou échouer ensemble, et utiliser des files d'attente pour les tâches en arrière-plan. Comme je me dirige vers la gestion de produit, comprendre ces contraintes techniques m'aidera aussi à dialoguer avec les ingénieurs et à planifier des fonctionnalités réalistes."
   ]
 }

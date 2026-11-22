@@ -13,8 +13,7 @@ router.get('/', async (req, res, next) => {
     const today = new Intl.DateTimeFormat(lang, { dateStyle: 'full' }).format(new Date());
 
     const questions = text.questions.map((q, i) =>
-      `<label>${i + 1}. ${escapeHtml(q)}<br><textarea rows="4" cols="70" name="q${i + 1}"></textarea></label><br><br>`).join('');
-
+  `<label>${i + 1}. ${escapeHtml(q)}<br><textarea rows="4" cols="70" name="q${i + 1}">${escapeHtml((text.answers && text.answers[i]) || '')}</textarea></label><br><br>`).join('');
     res.send(`<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8">
       <title>${escapeHtml(text.title)}</title></head><body>
       <p><a href="?lang=en">English</a> | <a href="?lang=fr">Français</a></p>
