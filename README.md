@@ -128,3 +128,110 @@ Create a **simple HTML page** (served by your Express app at `GET /feedback`) co
 - A short **viva/demo (10 minutes)** walkthrough.
 
 **Automatic penalties:** SQL injection vector anywhere in the app (−15), secrets committed to the repo (−5), app does not start per README instructions (−10), work the student cannot explain in the video (or at a follow-up viva if called) | Academic integrity referral; affected criteria re-scored at Developing or below |
+---
+
+# MediBook: Implementation Notes
+
+## Setup
+
+**Requirements:** Node.js LTS, Docker Desktop (for MySQL and Redis).
+
+```bash
+# 1. Start MySQL and Redis
+docker run --name medibook-mysql -e MYSQL_ROOT_PASSWORD=rootpass -p 3306:3306 -d mysql:8
+docker run --name medibook-redis -p 6379:6379 -d redis:7
+
+# 2. Create the database and load sample data (wait ~20s for MySQL to start)
+# Windows PowerShell:
+Get-Content database/schema.sql | docker exec -i medibook-mysql mysql -uroot -prootpass
+Get-Content database/seed.sql | docker exec -i medibook-mysql mysql -uroot -prootpass
+# macOS / Linux:
+docker exec -i medibook-mysql mysql -uroot -prootpass < database/schema.sql
+docker exec -i medibook-mysql mysql -uroot -prootpass < database/seed.sql
+
+# 3. Configure and install
+cp .env.example .env        # Windows: copy .env.example .env
+npm install
+
+# 4. Run (two terminals)
+npm start                   # web server on http://localhost:3000
+npm run worker              # background worker (waitlist + confirmations)
+
+# 5. Tests (no MySQL or Redis needed)
+npm test
+```
+
+Schema diagram: `schema-diagram.png`. The diagram was made with dbdiagram.io and draw.io; AI assistance for the diagram was allowed by the facilitator.
+
+## Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET, POST | `/patients` | list, create |
+| GET, PUT, DELETE | `/patients/:id` | read, update, delete |
+| GET, POST | `/doctors` | list, create |
+| GET, PUT, DELETE | `/doctors/:id` | read, update, delete |
+| GET | `/doctors/:id/stats` | revenue, upcoming count, next-7-days per-day counts, utilization % |
+| POST | `/appointments` | book |
+| DELETE | `/appointments/:id` | cancel (soft cancel, record kept) |
+| POST | `/waitlist` | join the waitlist |
+| GET | `/reports/doctors` | every doctor's total appointments and revenue |
+| GET | `/reports/busy-days` | doctor-days above 80% of the 12-slot cap |
+| GET | `/feedback?lang=en\|fr` | i18n feedback page |
+
+Date format for booking: `"YYYY-MM-DD HH:mm"`, for example `"2026-12-20 10:00"`.
+
+## Part C: Design justifications
+
+**REST choices.** Resources are nouns (`/patients`, `/doctors`, `/appointments`) and the HTTP method carries the action. Cancelling is `DELETE /appointments/:id`, but it is a *soft* cancel: the row stays with `status = 'cancelled'`, `refund_amount` and `cancelled_at`, because refund history must be kept. Stats hang off the doctor (`/doctors/:id/stats`) and reports live under `/reports`.
+
+**Status codes.** `400` = malformed input (missing fields, bad email, unparseable date). `404` = unknown id. `409` = the request is valid but conflicts with current state (slot already taken, doctor fully booked, appointment already cancelled, duplicate email). `422` = well-formed request that breaks a business rule (in the past, not on a 30-minute boundary, outside working hours, cancelling a past appointment). `201` for creation.
+
+**Booking rules.** Future only, 09:00 to 17:00, 30-minute boundaries, at most 12 per doctor per day. The last valid slot is 16:30; **17:00 exactly is invalid**, because a slot that starts at closing time makes no sense. All business values (12, hours, refund thresholds) are defined once in `src/config/constants.js`.
+
+**Refund policy (computed on the server).**
+- More than 48 hours notice: 100%
+- 24 hours to 48 hours **inclusive** (exactly 48h and exactly 24h both give 50%): 50%
+- Less than 24 hours: 0%
+
+The cancellation and refund record are written in one database transaction, so they succeed or fail together.
+
+**Concurrency.** Two layers protect the data:
+1. *Row lock.* Booking runs in a transaction that first does `SELECT ... FOR UPDATE` on the doctor's row, so simultaneous bookings for the same doctor run one after another. This makes the 12-per-day count safe.
+2. *Unique index.* `UNIQUE (doctor_id, active_slot)`, where `active_slot` is a generated column equal to `appt_datetime` while the status is `booked` and `NULL` once cancelled. NULLs do not collide in a UNIQUE index, so a cancelled slot can be rebooked while two active bookings can never share a slot. Even if the lock failed, the database would reject the duplicate.
+
+I verified this by sending 5 identical booking requests at the same moment: exactly one returned 201 and four returned 409.
+
+**Revenue** means `amount_paid - refund_amount`, summed over all of a doctor's appointments. **Utilization** is booked appointments in the next 7 days divided by (12 x 7). Both reports are computed in SQL inside the models (joins and aggregates), using a LEFT JOIN so doctors with no appointments still appear.
+
+**Code organisation.** `routes` map URLs to `controllers`, controllers validate input and call `services` or `models`, and **all SQL lives in `models`** using `?` placeholders. No ORM is used.
+
+## Part D: Audit log (fs module)
+
+Every successful booking and cancellation is appended as one JSON line to `logs/audit.log` using `fs/promises` (`mkdir` with `recursive: true`, then `appendFile`). It is asynchronous so logging never blocks the event loop, and no `*Sync` calls are used in request handlers. The `logs/` folder is created on first use. The logger catches its own errors and only prints them, because a logging failure must never fail the user's request.
+
+## Part E: Queues and Redis
+
+**Structure.** Redis holds two things: a job list `queue:jobs` (confirmation and "slot freed" jobs) and one waitlist list per doctor per day (`waitlist:<doctorId>:<date>`). The MySQL "3 tables only" rule does not apply to Redis.
+
+**Flow.** If a slot or the whole day is full, the API responds 409 with `waitlistAvailable: true`, and the patient can join via `POST /waitlist`. A successful booking enqueues a confirmation job. A cancellation enqueues a `slot_freed` job. The **worker is a separate process** (`npm run worker`) that blocks on the job list with `BRPOP`. For a confirmation job it writes the message to the audit log. For a `slot_freed` job it takes the first waiting patient for that doctor and day and books them into the freed slot using the same booking service (same rules and locks as the API). I kept the worker separate so slow background work never delays web requests, and so the web server and the worker can be restarted independently.
+
+**If the promoted booking fails.** The patient is taken off the waitlist, the booking is attempted, and on any failure the patient is pushed back to the **front** of the list and a `waitlist_promotion_failed` event is logged. The patient is therefore never lost from both the queue and the appointments table.
+
+**Behaviour to note.** The waitlist is per doctor per day, so the first waiting patient is placed into whichever slot of that day was freed (they may get an earlier time than the one they asked for).
+
+**Known limitation.** If the worker process crashed in the instant between removing a patient from the list and booking or re-adding them, that patient could be lost. A production system would use a reliable queue (for example BullMQ) with acknowledgements.
+
+## Part F: Tests
+
+`npm test` runs 11 Jest unit tests with fixed dates and no MySQL or Redis: the refund calculator (all three tiers, plus exactly 24h and exactly 48h) and the slot validator (valid slot, 09:15, 17:00, past date, malformed date, impossible date).
+
+## Part G: Feedback page
+
+`GET /feedback` is served by Express. All text comes from `locales/en.json` and `locales/fr.json`. `?lang=fr` shows French. Any unsupported `lang` falls back to English. Today's date is formatted for the active locale with `Intl.DateTimeFormat`.
+
+## Video walkthrough
+
+Video: PASTE-YOUR-YOUTUBE-LINK-HERE
+
+Run instructions: see **Setup** above.
