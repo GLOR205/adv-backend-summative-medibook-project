@@ -232,6 +232,6 @@ Every successful booking and cancellation is appended as one JSON line to `logs/
 
 ## Video walkthrough
 
-Video: PASTE-YOUR-YOUTUBE-LINK-HERE
+Video: (https://www.youtube.com/watch?v=ZsAHz1yaOe8)
 
 Run instructions: see **Setup** above.
